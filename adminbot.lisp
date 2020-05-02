@@ -12,33 +12,53 @@
 
 (defvar *adminbot* nil)
 
-(setf (registration-shared-secret *adminbot*) "googa")
+(defun get-known-users (client)
+  (getf (granolin::memory client) 'users-with-sent-invitations))
+
+(defun add-to-known-users (username client)
+  (setf (getf (granolin::memory client) 'users-with-sent-invitations)
+        (cons username (get-known-users client))))
+
+(defun has-sent-invitation-p (username client)
+  (member username (get-known-users client) :test #'string=))
+
+(defparameter *no-invites-message*
+  (format nil "~a ~a ~a"
+          "You have already invited someone."
+          "Users are currently limited to 1 invitation."
+          "Please ask an admin for assistance."))
 
 (defmethod handle-event :after ((*adminbot* adminbot) (event text-message-event))
-  (handle-invite-request (ppcre:split " " (msg-body event))))
+  (let ((words (ppcre:split " " (granolin:msg-body event))))
+    (when (string= (first words) "!invite")
+      (let ((invitee (cadr words))
+            (inviter (granolin:sender event)))
+        (print inviter)
+        (print (has-sent-invitation-p inviter *adminbot*))
+        (if (has-sent-invitation-p inviter *adminbot*)
+            (send-text-message *adminbot* *room-id* *no-invites-message*)
+            (handle-invite-request invitee inviter))))))
 
-(defparameter +register-path+ "/_matrix/client/r0/admin/register")
+(defconstant +register-path+ "/_matrix/client/r0/admin/register")
 
-(defun handle-invite-request (words)
-  (when (string= (first words) "!invite")
-    (let* ((path (granolin::make-matrix-path *adminbot* +register-path+))
-           (username (cadr words))
-           (password (generate-password))
-           (nonce (get-nonce path))
-           (homeserver (granolin::homeserver *adminbot*))
-           (user-id (make-user-id username homeserver)))
+(defun handle-invite-request (invitee inviter)
+  (let* ((path (granolin::make-matrix-path *adminbot* +register-path+))
+         (password (generate-password))
+         (homeserver (granolin::homeserver *adminbot*))
+         (user-id (make-user-id invitee homeserver)))
       (cond
-        ((not (valid-username-p username)) (send-text-message *adminbot* *room-id* +invalid-username-message+))
+        ((not (valid-username-p invitee)) (send-text-message *adminbot* *room-id* +invalid-username-message+))
         ((not (valid-user-id-p user-id)) (send-text-message *adminbot* *room-id* +invalid-user-id-message+))
-        (t  (progn
-              (send-text-message *adminbot* *room-id*
-                                 (format nil "Inviting ~a to this server with ~a for their password." username password))
-              (multiple-value-bind (body status headers)
-                  (register path (registration-shared-secret *adminbot*) username password)
-                (if (= 200 status)
-                    (send-text-message *adminbot* *room-id* "Success! Send your friend their login details!")
-                    (send-text-message *adminbot* *room-id*
-                                       (format nil "Something failed, contact a server admin."))))))))))
+        (t (progn
+             (send-text-message *adminbot* *room-id*
+                                (format nil "Inviting ~a to this server with ~a for their password." invitee password))
+             (multiple-value-bind (body status headers)
+                 (register path (registration-shared-secret *adminbot*) invitee password)
+               (if (= 200 status)
+                   (progn
+                     (add-to-known-users inviter *adminbot*)
+                     (send-text-message *adminbot* *room-id* "Success! Send your friend their login details!"))
+                   (send-text-message *adminbot* *room-id* "Something failed, contact a server admin."))))))))
 
 ;; The localpart of a user ID is an opaque identifier for that user.
 ;; It MUST NOT be empty, and MUST contain only the characters a-z, 0-9, ., _, =, -, and /.
@@ -49,8 +69,11 @@
   (unless (= 0 (length username))
     (every (lambda (char) (find char +username-chars+)) username)))
 
-(defconstant +invalid-username-message+
-  "Invalid username. Please retry with !invite <username>. The username must be present, and  contain only the characters a-z, 0-9, ., _, =, -, and /.")
+(defparameter *invalid-username-message*
+  (format nil "~a ~a ~a"
+          "Invalid username. Please retry with !invite <username>."
+          "The username must be present, and contain only the characters"
+          "a-z, 0-9, ., _, =, -, and /."))
 
 ;; The length of the entire user ID including the @ signifier and the domain MUST NOT exceed 255 characters
 
@@ -60,7 +83,7 @@
 (defun make-user-id (username homeserver)
   (concatenate 'string "@" username ":" homeserver))
 
-(defconstant +invalid-user-id-message+
+(defparameter *invalid-user-id-message*
   "Your username is too long, please choose something shorter.")
 
 (defun get-nonce (url)
