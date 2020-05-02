@@ -8,19 +8,22 @@
   ((registration-shared-secret
     :accessor registration-shared-secret
     :initarg :registration-shared-secret
+    :initform nil)
+   (known-users
+    :accessor known-users
     :initform nil)))
 
 (defvar *adminbot* nil)
 
-(defun get-known-users (client)
-  (getf (granolin::memory client) 'users-with-sent-invitations))
+(defmethod hardcopy-plist ((bot adminbot))
+  (list 'registration-shared-secret (registration-shared-secret bot)
+        'known-users (known-users bot)))
 
 (defun add-to-known-users (username client)
-  (setf (getf (granolin::memory client) 'users-with-sent-invitations)
-        (cons username (get-known-users client))))
+  (push username (known-users client)))
 
 (defun has-sent-invitation-p (username client)
-  (member username (get-known-users client) :test #'string=))
+  (member username (known-users client) :test #'string-equal))
 
 (defparameter *no-invites-message*
   (format nil "~a ~a ~a"
