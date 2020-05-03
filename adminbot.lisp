@@ -15,7 +15,7 @@
 
 (defvar *adminbot* nil)
 
-(defmethod hardcopy-plist ((bot adminbot))
+(defmethod hardcopy-plist append ((bot adminbot))
   (list 'registration-shared-secret (registration-shared-secret bot)
         'known-users (known-users bot)))
 
@@ -140,7 +140,9 @@
                              :ssl (if (member :ssl config)
                                       (getf config :ssl)
                                       t)
-                             :hardcopy (getf config :hardcopy)
+                             :hardcopy (if (member :hardcopy config)
+                                           (getf config :hardcopy)
+                                           "granolin.hardcopy")
                              :user-id (getf config :user-id)
                              :homeserver (getf config :homeserver)
                              :registration-shared-secret (getf config :registration-shared-secret))))
