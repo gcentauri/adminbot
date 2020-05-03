@@ -16,8 +16,7 @@
 (defvar *adminbot* nil)
 
 (defmethod hardcopy-plist append ((bot adminbot))
-  (list 'registration-shared-secret (registration-shared-secret bot)
-        'known-users (known-users bot)))
+  (list 'known-users (known-users bot)))
 
 (defun add-to-known-users (username client)
   (push username (known-users client)))
